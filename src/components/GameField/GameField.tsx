@@ -10,6 +10,8 @@ import player9Image from "../../assets/Regular face 9.png";
 import player10Image from "../../assets/Regular face 10.png";
 import backgroundImage from "../../assets/background.jpg";
 import bottleSound from "../../assets/Spinning sound.mp3";
+import kissSound from "../../assets/Kiss sound.mp3";
+import kissImage from "../../assets/Kiss.png";
 import { useState, useEffect, useRef } from "react";
 import { IPlayer, PlayerAvatar } from "../PlayerAvatar/PlayerAvatar";
 import { createUseStyles } from "react-jss";
@@ -43,48 +45,52 @@ const useStyles = createUseStyles({
     overflow: "hidden",
   },
   playersCircle: {
-    width: 1000,
-    height: 1000,
+    width: 750,
+    height: 750,
     position: "relative",
-  },
-  playerAvatar: {
-    position: "absolute",
-    transformOrigin: "500px 500px",
-  },
-  activeAvatar: {
-    width: 200,
-    height: 200,
-    borderRadius: "50%",
-    position: "relative",
-    zIndex: 1,
-    "&::before": {
-      content: '""',
-      position: "absolute",
-      top: "-10px",
-      left: "-10px",
-      right: "-10px",
-      bottom: "-10px",
-      borderRadius: "50%",
-      background:
-        "conic-gradient(red, orange, yellow, green, blue, indigo, violet, red)", // Радужный градиент
-      animation: "$rainbowGlow 3s linear infinite",
-      filter: "blur(25px)", // Размытие для эффекта тени
-      zIndex: -1,
+    "@media (max-width: 768px)": {
+      width: 500,
+      height: 500,
     },
-  },
-  nonActiveAvatar: {
-    width: 200,
-    height: 200,
+    "@media (max-width: 480px)": {
+      width: 375,
+      height: 375,
+    },
   },
   timer: {
     position: "absolute",
     top: "50%",
     left: "50%",
     transform: "translate(-50%, -50%)",
-    fontSize: "300px",
+    fontSize: "225px",
     color: "#000",
     fontWeight: "bold",
-    animation: "$pulse 1s ease-in-out infinite", // Анимация пульсации для таймера
+    animation: "$pulse 1s ease-in-out infinite",
+    "@media (max-width: 768px)": {
+      fontSize: "150px",
+    },
+    "@media (max-width: 480px)": {
+      fontSize: "112.5px",
+    },
+  },
+  kissImage: {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    transform: "translate(-50%, -50%)",
+    width: 300,
+    height: 300,
+    animation: "$kiss 3s ease-in-out 1",
+    zIndex: 20,
+    opacity: 0,
+    "@media (max-width: 768px)": {
+      width: 200,
+      height: 200,
+    },
+    "@media (max-width: 480px)": {
+      width: 150,
+      height: 150,
+    },
   },
   "@keyframes pulse": {
     "0%": {
@@ -100,72 +106,84 @@ const useStyles = createUseStyles({
       opacity: 0.8,
     },
   },
-  "@keyframes rainbowGlow": {
+  "@keyframes kiss": {
     "0%": {
-      transform: "rotate(0deg)", // Начальное вращение
+      transform: "translate(-50%, -50%) scale(0.7)",
+      opacity: 0,
+    },
+    "50%": {
+      transform: "translate(-50%, -50%) scale(1.2)",
+      opacity: 0.5,
+    },
+    "70%": {
+      transform: "translate(-50%, -50%) scale(1.5)",
+      opacity: 1,
     },
     "100%": {
-      transform: "rotate(360deg)", // Полный оборот
+      transform: "translate(-50%, -50%) scale(1)",
+      opacity: 0,
     },
   },
 });
 
 export function GameField() {
-  const [activePlayer, setActivePlayer] = useState(0);
-  const [previousPlayer, setPreviousPlayer] = useState(0);
-  const [kissCount, setKissCount] = useState(0);
-  const [timer, setTimer] = useState(3);
-  const [isWindowActive, setIsWindowActive] = useState(true);
-  const [angle, setAngle] = useState(0);
-  const [correctionAngle, setCorrectionAngle] = useState(0);
-  const audioRef = useRef<HTMLAudioElement>(null); // Используем ref для аудио
-  const spinTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const delayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [activePlayer, setActivePlayer] = useState<number>(0);
+  const [newPlayer, setNewPlayer] = useState<number>(0);
+  const [kissCount, setKissCount] = useState<number>(0);
+  const [timer, setTimer] = useState<number>(3);
+  const [angle, setAngle] = useState<number>(0);
+  const [correctionAngle, setCorrectionAngle] = useState<number>(0);
+  const [isTransitioning, setIsTransitioning] = useState<boolean>(true);
+  const [isKissing, setIsKissing] = useState<boolean>(false);
+  const [isPaused, setIsPaused] = useState<boolean>(false);
+
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const kissAudioRef = useRef<HTMLAudioElement>(null);
 
   const classes = useStyles();
 
+  // Обработчик паузы при изменении видимости страницы
   useEffect(() => {
-    // Отслеживаем видимость окна
     const handleVisibilityChange = () => {
-      setIsWindowActive(!document.hidden);
       if (document.hidden) {
-        // Остановить вращение при потере фокуса
-        if (audioRef.current) {
-          audioRef.current.pause();
-          audioRef.current.currentTime = 0;
-        }
-        if (spinTimeoutRef.current) clearTimeout(spinTimeoutRef.current);
-        if (delayTimeoutRef.current) clearTimeout(delayTimeoutRef.current);
+        setIsPaused(true); // Включаем паузу
+      } else {
+        setIsPaused(false); // Снимаем паузу
       }
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () =>
+    return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   useEffect(() => {
-    if (timer > 0 && isWindowActive) {
+    if (timer > 0 && isTransitioning && !isPaused) {
       const countdown = setInterval(() => {
         setTimer((prev) => prev - 1);
       }, 1000);
       return () => clearInterval(countdown);
-    } else if (timer === 0 && isWindowActive) {
+    } else if (timer === 0 && !isPaused) {
       startBottleSpin();
-      debugger
     }
-    debugger
-  }, [timer, isWindowActive]);
+  }, [timer, isPaused]);
 
-  const startBottleSpin = () => {
-    const spinDuration = 4000; // Время вращения бутылки
+  useEffect(() => {
+    if (isKissing && kissAudioRef.current) {
+      kissAudioRef.current.play();
+    }
+  }, [isKissing]);
+
+  const startBottleSpin = (): void => {
+    const spinDuration = 4000;
     const totalRotation = 6 * 360;
 
     let randomAngle = Math.floor(Math.random() * 360);
     let newActivePlayer = getPlayerByAngle(randomAngle);
 
     // Проверяем, что новый игрок не совпадает с предыдущим активным
-    while (newActivePlayer === previousPlayer) {
+    while (newActivePlayer === activePlayer) {
       randomAngle = Math.floor(Math.random() * 360);
       newActivePlayer = getPlayerByAngle(randomAngle);
     }
@@ -174,27 +192,36 @@ export function GameField() {
 
     // Воспроизведение звука
     if (audioRef.current) {
-      audioRef.current.loop = true; // Включаем зацикливание звука
+      audioRef.current.loop = true;
       audioRef.current.play();
     }
 
     // Устанавливаем вращение
     setTimeout(() => {
-      // Останавливаем звук после завершения вращения
       if (audioRef.current) {
         audioRef.current.pause();
-        audioRef.current.currentTime = 0; // Сброс к началу звука
-        audioRef.current.loop = false; // Отключаем зацикливание звука
+        audioRef.current.currentTime = 0;
+        audioRef.current.loop = false;
       }
 
-      // Задержка перед сменой активного игрока
+      setIsTransitioning(false);
+      setNewPlayer(newActivePlayer);
+
       setTimeout(() => {
-        setPreviousPlayer(newActivePlayer); // Обновляем предыдущего игрока
-        setActivePlayer(newActivePlayer); // Устанавливаем нового активного игрока
-        setKissCount((prev) => prev + 1); // Увеличиваем счетчик поцелуев
-        setTimer(3); // Сбрасываем таймер на 3
-      }, 1000); // Задержка в 1 секунду
+        setIsKissing(true);
+      }, 3000);
     }, spinDuration);
+
+    setTimeout(() => {
+      setActivePlayer(newActivePlayer);
+      setIsTransitioning(true);
+      setIsKissing(false);
+      setKissCount((prev) => prev + 1);
+    }, spinDuration + 6000);
+
+    setTimeout(() => {
+      setTimer(3);
+    }, spinDuration + 8000);
 
     // Для каждого вращения начинаем с текущего угла и добавляем полные обороты
     setAngle(
@@ -202,7 +229,7 @@ export function GameField() {
     );
   };
 
-  const getPlayerByAngle = (angle: number) => {
+  const getPlayerByAngle = (angle: number): number => {
     if (angle >= 306 && angle <= 341) {
       return 0; // Игрок 1
     } else if (angle >= 341 || angle <= 17) {
@@ -232,31 +259,30 @@ export function GameField() {
         {players.map((player, index) => {
           const angle = (index / players.length) * 360;
           return (
-            <div
+            <PlayerAvatar
+              newPlayer={newPlayer}
               key={player.id}
-              className={classes.playerAvatar}
-              style={{ transform: `rotate(${angle}deg) translate(150px)` }}
-            >
-              <div
-                className={
-                  index === activePlayer
-                    ? classes.activeAvatar
-                    : classes.nonActiveAvatar
-                }
-                style={{ transform: `rotate(-${angle}deg)` }}
-              >
-                <PlayerAvatar player={player} />
-              </div>
-            </div>
+              index={index}
+              activePlayer={activePlayer}
+              angle={angle}
+              player={player}
+              isTransitioning={isTransitioning}
+            />
           );
         })}
       </div>
       <Bottle angle={angle} />
       <KissCounter count={kissCount} />
-      {timer ? <div className={classes.timer}>{timer}</div> : null}
+      {timer && isTransitioning && !isPaused ? (
+        <div className={classes.timer}>{timer}</div>
+      ) : null}
+      {isKissing ? (
+        <img className={classes.kissImage} src={kissImage} alt="" />
+      ) : null}
 
       {/* Элемент аудио */}
       <audio ref={audioRef} src={bottleSound} preload="auto" />
+      <audio ref={kissAudioRef} src={kissSound} preload="auto" />
     </div>
   );
 }
